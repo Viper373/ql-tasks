@@ -1,4 +1,4 @@
-DrissionPage>=4.0.6
+DrissionPage
 loguru>=0.7.2
 requests>=2.31.0
 ddddocr>=1.4.11
