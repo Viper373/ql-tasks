@@ -96,16 +96,20 @@ def run_lowendspirit() -> tuple[bool, str]:
 
 
 def main() -> int:
-    tasks = [
-        ("Rainyun", run_rainyun),
-        ("iKuuu", run_ikuuu),
-        ("LowEndSpirit", run_lowendspirit),
+    # 根据环境变量决定是否执行各任务
+    tasks: list[tuple[str, callable, bool]] = [
+        ("Rainyun", run_rainyun, bool(os.getenv('RAINYUN_USERNAME') and os.getenv('RAINYUN_PASSWORD'))),
+        ("iKuuu", run_ikuuu, bool(os.getenv('IKUUU_USERNAME') and os.getenv('IKUUU_PASSWORD'))),
+        ("LowEndSpirit", run_lowendspirit, bool((os.getenv('LES_USERNAME') or os.getenv('LOWEND_USERNAME')) and (os.getenv('LES_PASSWORD') or os.getenv('LOWEND_PASSWORD')))),
     ]
 
     lines: list[str] = []
     all_success = True
 
-    for name, fn in tasks:
+    for name, fn, enabled in tasks:
+        if not enabled:
+            lines.append(f'⏭️ 跳过 {name}: 未配置所需环境变量')
+            continue
         ok, msg = fn()
         prefix = '✅' if ok else '❌'
         lines.append(f'{prefix} {msg}')

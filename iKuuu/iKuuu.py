@@ -12,7 +12,7 @@
 
 import time
 import random
-import configparser
+import os
 from typing import Dict, Optional
 from DrissionPage import Chromium, ChromiumOptions
 from loguru import logger
@@ -41,17 +41,15 @@ class IKuuuClient:
         time.sleep(wait_time)
 
     def _load_config(self) -> bool:
-        """加载配置文件"""
-        try:
-            parser = configparser.ConfigParser(inline_comment_prefixes=('#', ';'))
-            parser.read(self.config_path, encoding='utf-8')
-            self.username = parser['iKuuu']['username']
-            self.password = parser['iKuuu']['password']
-            logger.info("配置文件加载成功")
+        """从环境变量读取配置"""
+        env_user = os.getenv('IKUUU_USERNAME')
+        env_pass = os.getenv('IKUUU_PASSWORD')
+        if env_user and env_pass:
+            self.username, self.password = env_user, env_pass
+            logger.info("已从环境变量加载 iKuuu 配置")
             return True
-        except Exception as e:
-            logger.error(f"配置文件加载失败: {e}")
-            return False
+        logger.error("缺少 IKUUU_USERNAME/IKUUU_PASSWORD 环境变量")
+        return False
 
     def start(self) -> bool:
         """启动浏览器"""

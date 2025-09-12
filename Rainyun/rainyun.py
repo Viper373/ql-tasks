@@ -2,8 +2,6 @@ import os
 import random
 import re
 import time
-import configparser
-from pathlib import Path
 from typing import Optional
 import cv2
 import ddddocr
@@ -43,22 +41,12 @@ class RainyunSigner:
         logger.info("------------------------------------------------------------------")
 
     def read_config(self) -> tuple[str, str]:
-        """从 ../env.ini 读取配置信息"""
-        config_path = Path("../env.ini")
-        if not config_path.exists():
-            logger.error("配置文件 ../env.ini 不存在！")
-            exit()
-
-        config = configparser.ConfigParser()
-        config.read(config_path, encoding='utf-8')
-
-        try:
-            rainyun_username = config.get('RainYun', 'username')
-            rainyun_password = config.get('RainYun', 'password')
-            return rainyun_username, rainyun_password
-        except (configparser.NoSectionError, configparser.NoOptionError) as e:
-            logger.error(f"配置文件格式错误: {e}")
-            exit()
+        """从环境变量读取凭据。"""
+        env_user = os.getenv('RAINYUN_USERNAME')
+        env_pass = os.getenv('RAINYUN_PASSWORD')
+        if env_user and env_pass:
+            return env_user, env_pass
+        raise RuntimeError('未通过环境变量获得 RainYun 凭据')
 
     def init_browser(self) -> None:
         """初始化DrissionPage浏览器 - 修复版本"""

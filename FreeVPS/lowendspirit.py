@@ -9,7 +9,7 @@
 # @Home           :https://viper3.top
 # @Blog           :https://blog.viper3.top
 
-import configparser
+import os
 from DrissionPage import Chromium, ChromiumOptions
 from loguru import logger
 from pathlib import Path
@@ -24,22 +24,12 @@ class Lowendtalk:
         self.tab = Chromium().latest_tab
 
     def read_config(self) -> tuple[str, str]:
-        """从 ../env.ini 读取配置信息"""
-        config_path = Path("../env.ini")
-        if not config_path.exists():
-            logger.error("配置文件 ../env.ini 不存在！")
-            exit()
-
-        config = configparser.ConfigParser()
-        config.read(config_path, encoding='utf-8')
-
-        try:
-            username = config.get('LowEndTalk', 'username')
-            password = config.get('LowEndTalk', 'password')
-            return username, password
-        except (configparser.NoSectionError, configparser.NoOptionError) as e:
-            logger.error(f"配置文件格式错误: {e}")
-            exit()
+        """从环境变量读取。"""
+        env_user = os.getenv('LES_USERNAME') or os.getenv('LOWEND_USERNAME')
+        env_pass = os.getenv('LES_PASSWORD') or os.getenv('LOWEND_PASSWORD')
+        if env_user and env_pass:
+            return env_user, env_pass
+        raise RuntimeError('未通过环境变量获得 LowEndSpirit 凭据')
 
     def check_login_status(self):
         """
