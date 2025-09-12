@@ -1054,7 +1054,7 @@ if(e){
 def main():
     """主函数"""
     # 可以在这里设置debug=True来调试浏览器问题
-    signer = RainyunSigner(debug=True)
+    signer = RainyunSigner(debug=False)
     signer.run()
 
 
