@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       SENDKEY: ${{ secrets.SENDKEY }}
+      RAINYUN_USERNAME: ${{ secrets.RAINYUN_USERNAME }}
+      RAINYUN_PASSWORD: ${{ secrets.RAINYUN_PASSWORD }}
+      IKUUU_USERNAME: ${{ secrets.IKUUU_USERNAME }}
+      IKUUU_PASSWORD: ${{ secrets.IKUUU_PASSWORD }}
+      LES_USERNAME: ${{ secrets.LES_USERNAME }}
+      LES_PASSWORD: ${{ secrets.LES_PASSWORD }}
       DP_HEADLESS: 1
       DISPLAY: :99
     steps:
