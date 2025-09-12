@@ -21,7 +21,8 @@ class Lowendtalk:
     def __init__(self) -> None:
         self.url = "https://lowendspirit.com/"
         self.new_topic_url = "https://lowendspirit.com/post/discussion"
-        self.tab = Chromium().latest_tab
+        self.co = ChromiumOptions().headless()
+        self.tab = Chromium(self.co).latest_tab
 
     def read_config(self) -> tuple[str, str]:
         """从环境变量读取。"""
