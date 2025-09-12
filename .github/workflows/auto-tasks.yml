@@ -48,8 +48,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || true
-          pip install drissionpage==4.0.6.3 loguru requests ddddocr opencv-python-headless numpy
+          pip install -r requirements.txt
 
       - name: Prepare Xvfb (headless display)
         run: |
