@@ -72,9 +72,42 @@ class RainyunSigner:
             co.set_argument('--ignore-ssl-errors')
             co.set_argument('--ignore-certificate-errors-spki-list')
 
-            # 窗口设置
-            co.set_argument('--window-size=1920,1080')
-            co.set_argument('--start-maximized')
+            # GitHub Actions 环境特殊优化
+            if os.getenv('GITHUB_ACTIONS'):
+                logger.info("检测到 GitHub Actions 环境，应用特殊优化")
+                # 增加反检测参数
+                co.set_argument('--disable-blink-features=AutomationControlled')
+                co.set_argument('--disable-features=VizDisplayCompositor')
+                co.set_argument('--disable-ipc-flooding-protection')
+                co.set_argument('--disable-renderer-backgrounding')
+                co.set_argument('--disable-backgrounding-occluded-windows')
+                co.set_argument('--disable-client-side-phishing-detection')
+                co.set_argument('--disable-sync')
+                co.set_argument('--disable-default-apps')
+                co.set_argument('--disable-hang-monitor')
+                co.set_argument('--disable-prompt-on-repost')
+                co.set_argument('--disable-domain-reliability')
+                co.set_argument('--disable-component-extensions-with-background-pages')
+                co.set_argument('--disable-background-timer-throttling')
+                co.set_argument('--disable-background-networking')
+                co.set_argument('--disable-breakpad')
+                co.set_argument('--disable-component-update')
+                co.set_argument('--disable-features=TranslateUI')
+                co.set_argument('--disable-features=BlinkGenPropertyTrees')
+                # 模拟真实用户行为
+                co.set_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+                co.set_argument('--accept-language=zh-CN,zh;q=0.9,en;q=0.8')
+                co.set_argument('--accept-encoding=gzip, deflate, br')
+                # 增加内存和性能优化
+                co.set_argument('--memory-pressure-off')
+                co.set_argument('--max_old_space_size=4096')
+                co.set_argument('--js-flags=--max-old-space-size=4096')
+            else:
+                # 窗口设置
+                co.set_argument('--window-size=1920,1080')
+                co.set_argument('--start-maximized')
+                # 设置用户代理
+                co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
             # 如果不是调试模式，设置无头模式
             if not self.debug:
@@ -82,9 +115,6 @@ class RainyunSigner:
                 logger.info("使用无头模式启动浏览器")
             else:
                 logger.info("使用有头模式启动浏览器（调试模式）")
-
-            # 设置用户代理
-            co.set_user_agent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
             # 尝试指定Chrome路径（如果系统中有多个版本）
             possible_chrome_paths = [
@@ -259,19 +289,46 @@ class RainyunSigner:
 
     def wait_captcha_ready(self, max_wait: float = 4.0) -> bool:
         """等待验证码图片资源加载完成（背景样式与小图 naturalWidth>0）"""
+        # GitHub Actions 环境增加等待时间
+        if os.getenv('GITHUB_ACTIONS'):
+            max_wait = max_wait * 1.5  # 增加50%等待时间
+            logger.info("GitHub Actions 环境，增加验证码资源等待时间")
+            
         start = time.time()
-        while time.time() - start < max_wait:
-            slideBg = self.page.ele('xpath://*[@id="slideBg"]')
-            sprite = self.page.ele('xpath://*[@id="instruction"]/div/img')
-            style = slideBg.attr('style') if slideBg else None
-            ok_style = bool(style and 'url(' in style)
+        retry_count = 0
+        max_retries = int(max_wait / 0.2)  # 基于等待间隔计算最大重试次数
+        
+        while time.time() - start < max_wait and retry_count < max_retries:
             try:
-                nw = self.page.run_js("var i=document.querySelector('#instruction img'); return i? i.naturalWidth:0")
-            except Exception:
+                slideBg = self.page.ele('xpath://*[@id="slideBg"]')
+                sprite = self.page.ele('xpath://*[@id="instruction"]/div/img')
+                style = slideBg.attr('style') if slideBg else None
+                ok_style = bool(style and 'url(' in style)
+                
+                # 检查sprite图片是否加载完成
                 nw = 0
-            if ok_style and nw and nw > 0:
-                return True
-            time.sleep(0.2)
+                try:
+                    nw = self.page.run_js("var i=document.querySelector('#instruction img'); return i? i.naturalWidth:0")
+                except Exception as e:
+                    logger.debug(f"检查sprite图片尺寸时出错: {e}")
+                    
+                if ok_style and nw and nw > 0:
+                    logger.info("验证码资源加载完成")
+                    return True
+                    
+                retry_count += 1
+                if retry_count % 5 == 0:  # 每5次重试输出一次日志
+                    logger.debug(f"等待验证码资源加载... ({retry_count}/{max_retries})")
+                    
+            except Exception as e:
+                logger.debug(f"检查验证码资源时出错: {e}")
+                retry_count += 1
+                
+            # GitHub Actions 环境增加等待间隔
+            wait_interval = 0.3 if os.getenv('GITHUB_ACTIONS') else 0.2
+            time.sleep(wait_interval)
+            
+        logger.warning(f"验证码资源加载超时 (等待了 {time.time() - start:.1f}秒)")
         return False
 
     # 图像预处理，提升特征稳定性
@@ -410,58 +467,93 @@ class RainyunSigner:
                 if os.path.isfile(file_path) or os.path.islink(file_path):
                     os.remove(file_path)
 
-        # 等待资源就绪
-        if not self.wait_captcha_ready(4.0):
+        # 等待资源就绪，增加等待时间
+        if not self.wait_captcha_ready(6.0):
             logger.warning("验证码资源未就绪，稍后重试")
-            time.sleep(0.8)
+            time.sleep(1.0)
+            return  # 资源未就绪时直接返回，避免下载无效图片
 
         # 下载背景图片
-        slideBg = self.page.ele('xpath://*[@id="slideBg"]')
-        if slideBg:
-            img1_style = slideBg.attr('style')
-            img1_url = self.get_url_from_style(img1_style)
-            if img1_url:
-                if img1_url.startswith("//"):
-                    img1_url = "https:" + img1_url
-                logger.info("开始下载验证码图片(1)")
-                self.download_image(img1_url, "captcha.jpg")
+        try:
+            slideBg = self.page.ele('xpath://*[@id="slideBg"]')
+            if slideBg:
+                img1_style = slideBg.attr('style')
+                img1_url = self.get_url_from_style(img1_style)
+                if img1_url:
+                    if img1_url.startswith("//"):
+                        img1_url = "https:" + img1_url
+                    logger.info("开始下载验证码背景图片")
+                    self.download_image(img1_url, "captcha.jpg")
+                else:
+                    logger.warning("无法获取验证码背景图片URL")
+            else:
+                logger.warning("未找到验证码背景元素")
+        except Exception as e:
+            logger.warning(f"下载验证码背景图片时出错: {e}")
 
         # 下载小图标
-        sprite = self.page.ele('xpath://*[@id="instruction"]/div/img')
-        if sprite:
-            img2_url = sprite.attr('src')
-            if img2_url:
-                if img2_url.startswith("//"):
-                    img2_url = "https:" + img2_url
-                logger.info("开始下载验证码图片(2)")
-                self.download_image(img2_url, "sprite.jpg")
+        try:
+            sprite = self.page.ele('xpath://*[@id="instruction"]/div/img')
+            if sprite:
+                img2_url = sprite.attr('src')
+                if img2_url:
+                    if img2_url.startswith("//"):
+                        img2_url = "https:" + img2_url
+                    logger.info("开始下载验证码sprite图片")
+                    self.download_image(img2_url, "sprite.jpg")
+                else:
+                    logger.warning("无法获取验证码sprite图片URL")
+            else:
+                logger.warning("未找到验证码sprite元素")
+        except Exception as e:
+            logger.warning(f"下载验证码sprite图片时出错: {e}")
 
     def check_captcha(self) -> bool:
         """按示例逻辑：切三张子图并用 OCR 过滤明显无效的验证码。"""
         if not os.path.exists("temp/sprite.jpg"):
+            logger.warning("验证码sprite图片不存在")
             return False
 
         raw = cv2.imread("temp/sprite.jpg")
         if raw is None:
+            logger.warning("无法读取验证码sprite图片")
             return False
 
         try:
             w = raw.shape[1]
+            if w < 3:
+                logger.warning("验证码sprite图片宽度不足")
+                return False
+                
             invalid_cnt = 0
             for i in range(3):
                 temp = raw[:, w // 3 * i: w // 3 * (i + 1)]
                 if temp.size == 0:
+                    logger.warning(f"验证码切片 {i+1} 为空")
                     return False
                 cv2.imwrite(f"temp/sprite_{i + 1}.jpg", temp)
                 with open(f"temp/sprite_{i + 1}.jpg", mode="rb") as f:
                     temp_rb = f.read()
                 if self.ocr.classification(temp_rb) in ["0", "1"]:
                     invalid_cnt += 1
-            # 放宽：仅当全部被判为 0/1 时才认为识别率很低
-            return invalid_cnt < 3
+            
+            # GitHub Actions 环境使用更宽松的检查标准
+            if os.getenv('GITHUB_ACTIONS'):
+                # 在 GitHub Actions 环境中，只有全部3个都被判定为无效时才认为质量低
+                is_valid = invalid_cnt < 3
+                if not is_valid:
+                    logger.warning(f"GitHub Actions 环境验证码质量检查：{invalid_cnt}/3 个切片被判定为无效")
+            else:
+                # 本地环境使用原来的标准
+                is_valid = invalid_cnt <= 2
+                if not is_valid:
+                    logger.warning(f"验证码质量检查：{invalid_cnt}/3 个切片被判定为无效")
+                    
+            return is_valid
         except Exception as e:
-            logger.exception(f"验证码切割/检测异常: {e}")
-            return False
+            logger.warning(f"验证码切割/检测异常: {e}")
+            # 异常时也尝试继续，而不是直接返回False
+            return True
 
     def check_answer(self, d: dict) -> bool:
         """检查是否存在重复坐标，快速判断识别错误"""
@@ -866,6 +958,7 @@ if(e){
                 else:
                     logger.warning("验证码资源质量低，本轮仍尝试提交")
                 # 不在识别阶段刷新；提交后若未通过，再由外层循环刷新
+                    
         except Exception as e:
             logger.error(f"处理验证码时发生异常: {e}")
 
@@ -1010,6 +1103,40 @@ if(e){
                     js = f.read()
                 self.page.run_js_loaded(js)
                 logger.info("已加载反检测脚本")
+                
+                # GitHub Actions 环境额外反检测措施
+                if os.getenv('GITHUB_ACTIONS'):
+                    logger.info("GitHub Actions 环境，应用额外反检测措施")
+                    additional_stealth = """
+                    // 隐藏 webdriver 属性
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined,
+                    });
+                    
+                    // 模拟真实用户行为
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                    });
+                    
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-CN', 'zh', 'en'],
+                    });
+                    
+                    // 模拟真实的屏幕分辨率
+                    Object.defineProperty(screen, 'width', {
+                        get: () => 1920,
+                    });
+                    Object.defineProperty(screen, 'height', {
+                        get: () => 1080,
+                    });
+                    
+                    // 隐藏自动化特征
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+                    delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+                    """
+                    self.page.run_js_loaded(additional_stealth)
+                    logger.info("已应用 GitHub Actions 额外反检测措施")
 
             # 先访问登录页面检查登录状态
             logger.info("检查登录状态")

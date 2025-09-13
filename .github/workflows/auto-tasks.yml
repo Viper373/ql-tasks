@@ -60,6 +60,8 @@ jobs:
       - name: Prepare Xvfb (headless display)
         run: |
           Xvfb :99 -screen 0 1920x1080x24 &
+          # 等待 Xvfb 启动
+          sleep 3
 
       - name: Run all tasks
         working-directory: ./scripts
