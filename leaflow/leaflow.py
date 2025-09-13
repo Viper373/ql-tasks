@@ -9,13 +9,14 @@
 # @Home           :https://viper3.top
 # @Blog           :https://blog.viper3.top
 
+import os
 import requests
 from lxml import etree
 from loguru import logger
 
 url = "https://checkin.leaflow.net/index.php"
 cookies = {
-    "PHPSESSID": "90838baa3b402e8f6b377a65e62fcf14",
+    "PHPSESSID": os.getenv('LEAFLOW_COOKIE'),
 }
 headers = {
     "Host": "checkin.leaflow.net",

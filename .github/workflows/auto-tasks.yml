@@ -16,6 +16,7 @@ jobs:
       IKUUU_PASSWORD: ${{ secrets.IKUUU_PASSWORD }}
       LES_USERNAME: ${{ secrets.LES_USERNAME }}
       LES_PASSWORD: ${{ secrets.LES_PASSWORD }}
+      LEAFLOW_COOKIE: ${{ secrets.LEAFLOW_COOKIE }}
       DP_HEADLESS: 1
       DISPLAY: :99
     steps:

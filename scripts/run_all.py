@@ -95,12 +95,45 @@ def run_lowendspirit() -> tuple[bool, str]:
         return False, f'LowEndSpirit: 失败 - {e}\n{traceback.format_exc()}'
 
 
+def run_leaflow() -> tuple[bool, str]:
+    try:
+        # 直接执行 leaflow.py 脚本
+        leaflow_script = Path(__file__).resolve().parents[1] / 'leaflow' / 'leaflow.py'
+        
+        # 切换工作目录到 leaflow 目录，确保相对路径正确
+        cwd = os.getcwd()
+        os.chdir(str(leaflow_script.parent))
+        
+        try:
+            # 执行脚本并捕获输出
+            import subprocess
+            result = subprocess.run([sys.executable, str(leaflow_script)], 
+                                  capture_output=True, text=True, encoding='utf-8')
+            
+            # 检查执行结果
+            if result.returncode == 0:
+                # 检查输出中是否包含成功信息
+                output = result.stdout + result.stderr
+                if any(keyword in output for keyword in ['签到', '成功', 'reward', 'checkin', 'Leaflow']):
+                    return True, f'Leaflow: 签到成功\n{output.strip()}'
+                else:
+                    return False, f'Leaflow: 签到失败\n{output.strip()}'
+            else:
+                return False, f'Leaflow: 执行失败 (返回码: {result.returncode})\n{result.stderr.strip()}'
+        finally:
+            os.chdir(cwd)
+            
+    except Exception as e:
+        return False, f'Leaflow: 失败 - {e}\n{traceback.format_exc()}'
+
+
 def main() -> int:
     # 根据环境变量决定是否执行各任务
     tasks: list[tuple[str, callable, bool]] = [
         ("Rainyun", run_rainyun, bool(os.getenv('RAINYUN_USERNAME') and os.getenv('RAINYUN_PASSWORD'))),
         ("iKuuu", run_ikuuu, bool(os.getenv('IKUUU_USERNAME') and os.getenv('IKUUU_PASSWORD'))),
         ("LowEndSpirit", run_lowendspirit, bool((os.getenv('LES_USERNAME') or os.getenv('LOWEND_USERNAME')) and (os.getenv('LES_PASSWORD') or os.getenv('LOWEND_PASSWORD')))),
+        ("Leaflow", run_leaflow, bool(os.getenv('LEAFLOW_COOKIE'))),
     ]
 
     lines: list[str] = []
