@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  browserless:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: browserless
+    ports:
+      - "3000:3000"
+    environment:
+      # Authentication token. Set to a strong value in production.
+      - TOKEN=${BROWSERLESS_TOKEN:-}
+      # Concurrency and queueing
+      - MAX_CONCURRENT_SESSIONS=5
+      - QUEUE_LENGTH=50
+      # Defaults for new sessions
+      - DEFAULT_BLOCK_ADS=true
+      - DEFAULT_STEALTH=true
+      - DEFAULT_IGNORE_HTTPS_ERRORS=false
+      # Networking and security
+      - ENABLE_CORS=true
+      - CONNECTION_TIMEOUT=600000
+    restart: unless-stopped
