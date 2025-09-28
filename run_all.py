@@ -69,13 +69,22 @@ class TaskOutputCollector:
     def get_formatted_output(self) -> str:
         """获取格式化的输出信息"""
         result = [
-            "## 🚀 AutoTasks 执行报告",
+            "## 📋 AutoTasks 执行报告",
             ""
         ]
         
+        # 任务emoji映射
+        task_emojis = {
+            'Rainyun': '🌧️',
+            'iKuuu': '🚀', 
+            'Leaflow': '🍃'
+        }
+        
         for task in self.outputs:
+            task_name = task['task_name']
+            task_emoji = task_emojis.get(task_name, '📋')
             status_icon = "✅" if task['success'] else "❌"
-            result.append(f"### {status_icon} {task['task_name']}")
+            result.append(f"### {task_emoji} {task_name} {status_icon}")
             
             if task['summary']:
                 result.append(f"**执行结果**: {task['summary']}")
@@ -100,9 +109,18 @@ class TaskOutputCollector:
         # 添加总结
         success_count = sum(1 for task in self.outputs if task['success'])
         total_count = len(self.outputs)
+        
+        # 根据成功率选择总结emoji
+        if success_count == total_count:
+            summary_emoji = "🎉"  # 全部成功
+        elif success_count > 0:
+            summary_emoji = "📊"  # 部分成功
+        else:
+            summary_emoji = "😞"  # 全部失败
+            
         result.extend([
             "---",
-            f"**总结**: {success_count}/{total_count} 个任务执行成功"
+            f"**{summary_emoji} 总结**: {success_count}/{total_count} 个任务执行成功"
         ])
         
         return "\n".join(result)
@@ -144,7 +162,7 @@ def show_banner() -> None:
     """显示程序横幅"""
     banner_lines = [
         "=" * 70,
-        "🚀  AutoTasks 自动签到工具集 v1.0-DP by Viper373",
+        "📋  AutoTasks 自动签到工具集 v1.0-DP by Viper373",
         "📦  支持雨云、iKuuu、Leaflow 自动签到",
         "🔗  Github: https://github.com/Viper373/AutoTasks",
         "=" * 70
@@ -631,12 +649,6 @@ def _send_notification(lines: List[str]) -> None:
 
 
 if __name__ == '__main__':
-    os.environ['RAINYUN_USERNAME'] = 'Viper373'
-    os.environ['RAINYUN_PASSWORD'] = 'ShadowZed666'
-    os.environ['IKUUU_USERNAME'] = 'viper3731217@gmail.com'
-    os.environ['IKUUU_PASSWORD'] = 'ShadowZed666'
-    os.environ['LEAFLOW_COOKIE'] = '90838baa3b402e8f6b377a65e62fcf14'
-    os.environ['CHROME_EXECUTABLE'] = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
     
     # 在这里控制debug模式：True=有头模式(仅Windows)，False=无头模式
-    raise SystemExit(main(debug=True))
+    raise SystemExit(main())
