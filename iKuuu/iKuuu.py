@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 # @Software       :PyCharm
-# @Project        :Auto-Signin
+# @Project        :AutoTasks
 # @Path           :/iKuuu
 # @FileName       :iKuuu.py
 # @Time           :2025/9/7 09:33
@@ -9,31 +9,59 @@
 # @Home           :https://viper3.top
 # @Blog           :https://blog.viper3.top
 
-
+import os
 import time
 import random
-import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
+
 from DrissionPage import Chromium, ChromiumOptions
 from loguru import logger
 
 
 class IKuuuClient:
-    """iKuuu 自动登录与签到客户端。"""
+    """iKuuu 自动登录与签到客户端"""
 
-    def __init__(self, config_path: str = '../env.ini') -> None:
+    def __init__(self, config_path: str = '../env.ini', debug: bool = False, output_collector: Optional[Any] = None) -> None:
         self.config_path = config_path
         self.username: Optional[str] = None
         self.password: Optional[str] = None
         self.browser: Optional[Chromium] = None
-        self.tab = None
+        self.tab: Optional[Any] = None
         self.base_url = 'https://ikuuu.org/user'
+        self.ver = "1.0-DP"
+        self.debug = debug
+        self.output_collector = output_collector
         self._setup_logger()
         self._load_config()
+        self._show_banner()
 
     def _setup_logger(self) -> None:
         """配置日志，显示行号和方法名"""
         pass
+    
+    def _log(self, level: str, message: str) -> None:
+        """统一的日志输出方法"""
+        log_methods = {
+            'info': logger.info,
+            'success': logger.success,
+            'warning': logger.warning,
+            'error': logger.error
+        }
+        
+        log_method = log_methods.get(level, logger.info)
+        log_method(message)
+        
+        # 同时输出到收集器
+        if self.output_collector:
+            self.output_collector.add_output(level, message)
+
+    def _show_banner(self) -> None:
+        """显示程序横幅"""
+        logger.info("=" * 70)
+        logger.info(f"🚀  iKuuu签到工具 v{self.ver} by Viper373")
+        logger.info("📦  DrissionPage版本 - 自动登录与签到")
+        logger.info("🔗  Github: https://github.com/Viper373/AutoTasks")
+        logger.info("=" * 70)
 
     def _random_wait(self, max_seconds: float = 2.0) -> None:
         """随机等待0-max_seconds秒"""
@@ -54,10 +82,11 @@ class IKuuuClient:
     def start(self) -> bool:
         """启动浏览器"""
         try:
-            co = ChromiumOptions().headless()
-            self.browser = Chromium(co)
-            self.tab = self.browser.latest_tab
-            logger.info("浏览器启动成功")
+            # 浏览器由全局管理器提供，直接使用
+            if not self.browser or not self.tab:
+                logger.error("浏览器未初始化")
+                return False
+            logger.info("使用全局浏览器实例")
             return True
         except Exception as e:
             logger.error(f"浏览器启动失败: {e}")
@@ -77,17 +106,28 @@ class IKuuuClient:
     def is_logged_in(self) -> bool:
         """检查是否已登录"""
         try:
-            heading = self.tab.ele('xpath://div[@class="d-sm-none d-lg-inline-block"]', timeout=3)
-            if not heading:
-                logger.info("未找到登录状态标识元素")
-                return False
-            text = heading.text or ''
-            is_logged = 'Hi' in text
-            if is_logged:
-                logger.info("用户已登录")
-            else:
-                logger.info("用户未登录")
-            return is_logged
+            # 尝试多种登录状态标识
+            selectors = [
+                'xpath://div[@class="d-sm-none d-lg-inline-block"]',
+                'xpath://div[contains(@class, "user-menu")]',
+                'xpath://a[contains(@href, "/profile")]',
+                'xpath://div[contains(text(), "Hi")]',
+                'xpath://span[contains(text(), "Hi")]'
+            ]
+            
+            for selector in selectors:
+                try:
+                    element = self.tab.ele(selector, timeout=2)
+                    if element:
+                        text = element.text or ''
+                        if 'Hi' in text or 'profile' in text.lower():
+                            logger.info("用户已登录")
+                            return True
+                except:
+                    continue
+            
+            logger.info("用户未登录")
+            return False
         except Exception as e:
             logger.warning(f"检查登录状态时出错: {e}")
             return False
@@ -170,7 +210,7 @@ class IKuuuClient:
                     text = status_text.text or ''
                     if '签到成功' in text:
                         reward = self.tab.ele('xpath://div[@id="swal2-content"]', timeout=3)
-                        logger.success(f"签到成功：{reward.text}")
+                        self._log('success', f"签到成功：{reward.text}")
                         self.tab.ele('xpath://button[@class="swal2-confirm swal2-styled"]', timeout=3).click()  # 点击OK关闭弹窗
                         return True
                     else:
@@ -199,7 +239,7 @@ class IKuuuClient:
             time.sleep(3)
 
             # 查找信息卡片
-            rows = self.tab.eles('xpath://div[@class="card card-statistic-2"]', timeout=5)
+            rows = self.tab.eles('xpath://div[@class="row"][1]/div[contains(@class, "col-lg-3") and contains(@class, "col-md-3") and contains(@class, "col-sm-12")]', timeout=5)
             if not rows:
                 logger.warning("未找到信息卡片")
                 return False
@@ -243,7 +283,7 @@ class IKuuuClient:
                     else:
                         logger.info(f"{header}: {details}")
 
-            logger.success("用户信息获取成功")
+            self._log('success', "用户信息获取成功")
             return True
 
         except Exception as e:
@@ -252,12 +292,8 @@ class IKuuuClient:
 
     def close(self) -> None:
         """关闭浏览器"""
-        try:
-            if self.browser:
-                self.browser.quit()
-                logger.info("浏览器已关闭")
-        except Exception as e:
-            logger.warning(f"关闭浏览器时出错: {e}")
+        # 浏览器由全局管理器管理，不需要在这里关闭
+        logger.info("iKuuu任务清理完成")
 
     def run(self) -> bool:
         """执行完整的签到流程"""
@@ -289,7 +325,7 @@ class IKuuuClient:
             # 6. 汇总结果
             if checkin_success:
                 if info_success:
-                    logger.success("=== 任务完成：签到成功，信息获取成功 ===")
+                    self._log('success', "=== 任务完成：签到成功，信息获取成功 ===")
                 else:
                     logger.success("=== 任务部分成功：签到成功，信息获取失败 ===")
                 return True

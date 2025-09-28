@@ -2,14 +2,20 @@ import time
 from loguru import logger
 
 from rainyun import RainyunSigner
+from DrissionPage import Chromium
 
 
 def main():
+    # 创建浏览器实例
+    browser = Chromium()
     signer = RainyunSigner(debug=True)
     try:
         # 初始化组件
         signer.init_ocr()
         signer.init_browser()
+
+        # 设置页面对象
+        signer.page = browser.latest_tab
 
         logger.info("打开注册页")
         signer.page.get("https://app.rainyun.com/auth/reg")
@@ -27,11 +33,14 @@ def main():
             logger.error("注册页元素未找到，终止")
             return
 
-        username.clear(); username.input("Viper")
+        username.clear()
+        username.input("Viper")
         time.sleep(0.3)
-        pwd.clear(); pwd.input("Passw0rd!@#")
+        pwd.clear()
+        pwd.input("Passw0rd!@#")
         time.sleep(0.3)
-        repwd.clear(); repwd.input("Passw0rd!@#")
+        repwd.clear()
+        repwd.input("Passw0rd!@#")
         time.sleep(0.3)
 
         logger.info("提交注册，触发验证码")
@@ -55,9 +64,12 @@ def main():
         logger.exception(f"demo 运行异常: {e}")
     finally:
         signer.cleanup()
+        # 关闭浏览器
+        try:
+            browser.quit()
+        except:
+            pass
 
 
 if __name__ == "__main__":
     main()
-
-
