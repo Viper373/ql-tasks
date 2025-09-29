@@ -77,7 +77,8 @@ class TaskOutputCollector:
         task_emojis = {
             'Rainyun': '🌧️',
             'iKuuu': '🚀', 
-            'Leaflow': '🍃'
+            'Leaflow': '🍃',
+            'NodeSeek': '🔍'
         }
         
         for task in self.outputs:
@@ -163,7 +164,7 @@ def show_banner() -> None:
     banner_lines = [
         "=" * 70,
         "📋  AutoTasks 自动签到工具集 v1.0-DP by Viper373",
-        "📦  支持雨云、iKuuu、Leaflow 自动签到",
+        "📦  支持“雨云”、“iKuuu”、“Leaflow”、“NodeSeek” 自动签到",
         "🔗  Github: https://github.com/Viper373/AutoTasks",
         "=" * 70
     ]
@@ -562,6 +563,36 @@ def run_leaflow() -> Tuple[bool, str]:
         return False, f'Leaflow: 失败 - {e}\n{traceback.format_exc()}'
 
 
+def run_nodeseek() -> Tuple[bool, str]:
+    """执行NodeSeek签到任务"""
+    output_collector.start_task("NodeSeek")
+    try:
+        # 清理模块缓存
+        if 'nodeseek' in sys.modules:
+            del sys.modules['nodeseek']
+        
+        nodeseek_dir = Path(__file__).resolve().parent / 'NodeSeek'
+        sys.path.append(str(nodeseek_dir))
+        nodeseek = importlib.import_module('nodeseek')
+        signer = nodeseek.NodeSeekSigner(debug=browser_manager.debug, output_collector=output_collector)
+        
+        output_collector.add_output('info', '开始执行NodeSeek签到任务')
+        success = signer.run()
+        
+        if success:
+            output_collector.add_output('success', 'NodeSeek签到任务执行成功')
+            output_collector.finish_task(True, "NodeSeek签到任务执行成功")
+            return True, 'NodeSeek: 执行成功'
+        else:
+            output_collector.add_output('error', 'NodeSeek签到任务执行失败')
+            output_collector.finish_task(False, "NodeSeek签到任务执行失败")
+            return False, 'NodeSeek: 执行失败'
+    except Exception as e:
+        output_collector.add_output('error', f'NodeSeek: 失败 - {e}')
+        output_collector.finish_task(False, f"NodeSeek签到任务异常: {e}")
+        return False, f'NodeSeek: 失败 - {e}\n{traceback.format_exc()}'
+
+
 def main(debug: bool = False) -> int:
     """主函数"""
     global browser_manager
@@ -607,6 +638,7 @@ def _execute_tasks() -> int:
         ("Rainyun", run_rainyun, bool(os.getenv('RAINYUN_USERNAME') and os.getenv('RAINYUN_PASSWORD'))),
         ("iKuuu", run_ikuuu, bool(os.getenv('IKUUU_USERNAME') and os.getenv('IKUUU_PASSWORD'))),
         ("Leaflow", run_leaflow, bool(os.getenv('LEAFLOW_COOKIE'))),
+        ("NodeSeek", run_nodeseek, bool(os.getenv('NODESEEK_COOKIE'))),
     ]
 
     lines: List[str] = []
