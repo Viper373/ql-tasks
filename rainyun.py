@@ -31,6 +31,9 @@ except ImportError:
 # ---------------- 配置项 ----------------
 RAINYUN_USERNAME = os.environ.get('RAINYUN_USERNAME', '')
 RAINYUN_PASSWORD = os.environ.get('RAINYUN_PASSWORD', '')
+RAINYUN_API_KEY = os.environ.get('RAINYUN_API_KEY', '')
+RAINYUN_DEV_CODE = os.environ.get('RAINYUN_DEV_CODE', '')
+RAINYUN_RAIN_SESSION = os.environ.get('RAINYUN_RAIN_SESSION', '')
 
 class RainyunSigner:
     """雨云签到工具"""
@@ -44,6 +47,23 @@ class RainyunSigner:
         self.det: Optional[ddddocr.DdddOcr] = None
         self.browser: Optional[Chromium] = None
         self.page = None
+        
+        # API认证相关
+        self.api_key = RAINYUN_API_KEY
+        self.dev_code = RAINYUN_DEV_CODE
+        self.rain_session = RAINYUN_RAIN_SESSION
+        self.base_url = "https://app.rainyun.com"
+        self.session = requests.Session()
+        
+        # 设置请求头
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': 'https://app.rainyun.com/',
+        })
 
     def set_browser(self, browser: Chromium) -> None:
         """设置浏览器实例"""
@@ -56,44 +76,50 @@ class RainyunSigner:
         self.ocr = ddddocr.DdddOcr(show_ad=False)
         self.det = ddddocr.DdddOcr(det=True, show_ad=False)
 
-    def login(self, username: str, password: str) -> bool:
-        """登录"""
+    def check_auth_status(self) -> bool:
+        """检查认证状态"""
         try:
-            logger.info("开始登录...")
+            logger.info("检查认证状态...")
             
-            # 1. 导航到登录页面
-            self.page.get("https://app.rainyun.com/login")
-            time.sleep(2)
+            # 使用API密钥认证
+            if self.api_key:
+                self.session.headers['x-api-key'] = self.api_key
+                response = self.session.get(f"{self.base_url}/api/user", timeout=self.timeout)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('code') == 0:
+                        logger.info("API密钥认证成功")
+                        return True
+                    else:
+                        logger.warning(f"API认证失败: {data.get('msg', '未知错误')}")
+                        return False
+                else:
+                    logger.warning(f"API请求失败: {response.status_code}")
+                    return False
             
-            # 2. 输入用户名和密码
-            email_input = self.page.ele('xpath://input[@type="text"]', timeout=5)
-            if email_input:
-                email_input.clear()
-                email_input.input(username)
-                time.sleep(1)
+            # 使用Cookie认证
+            elif self.dev_code and self.rain_session:
+                self.session.cookies.set('dev-code', self.dev_code)
+                self.session.cookies.set('rain-session', self.rain_session)
+                response = self.session.get(f"{self.base_url}/api/user", timeout=self.timeout)
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('code') == 0:
+                        logger.info("Cookie认证成功")
+                        return True
+                    else:
+                        logger.warning(f"Cookie认证失败: {data.get('msg', '未知错误')}")
+                        return False
+                else:
+                    logger.warning(f"Cookie请求失败: {response.status_code}")
+                    return False
             
-            pwd_input = self.page.ele('xpath://input[@type="password"]', timeout=5)
-            if pwd_input:
-                pwd_input.clear()
-                pwd_input.input(password)
-                time.sleep(1)
-            
-            # 3. 点击登录按钮
-            login_btn = self.page.ele('xpath://button[contains(text(), "立即登录")]', timeout=5)
-            if login_btn:
-                login_btn.click()
-                time.sleep(3)
-            
-            # 4. 检查是否登录成功
-            if "dashboard" in self.page.url:
-                logger.success("登录成功")
-                return True
             else:
-                logger.error("登录失败")
+                logger.error("未配置认证信息")
                 return False
                 
         except Exception as e:
-            logger.error(f"登录过程中出现异常: {e}")
+            logger.error(f"检查认证状态失败: {e}")
             return False
 
     def check_login_status(self) -> bool:
@@ -354,39 +380,59 @@ class RainyunSigner:
             # 异常时也尝试继续，而不是直接返回False
             return True
 
+    def get_checkin_status(self) -> tuple[bool, str]:
+        """获取签到状态"""
+        try:
+            logger.info("获取签到状态...")
+            response = self.session.get(f"{self.base_url}/api/checkin/status", timeout=self.timeout)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('code') == 0:
+                    is_checked = data.get('data', {}).get('isChecked', False)
+                    if is_checked:
+                        return True, "今日已签到"
+                    else:
+                        return False, "今日未签到"
+                else:
+                    return False, f"获取状态失败: {data.get('msg', '未知错误')}"
+            else:
+                return False, f"请求失败: {response.status_code}"
+                
+        except Exception as e:
+            return False, f"获取签到状态异常: {e}"
+
     def sign_in(self) -> tuple[bool, str]:
         """执行签到"""
         try:
             logger.info("开始签到...")
             
-            # 1. 导航到签到页面
-            self.page.get("https://app.rainyun.com/dashboard")
-            time.sleep(2)
+            # 1. 检查是否已经签到
+            status_success, status_msg = self.get_checkin_status()
+            if status_success and "已签到" in status_msg:
+                return True, "今日已签到"
             
-            # 2. 查找签到按钮
-            sign_btn = self.page.ele('xpath://button[contains(text(), "签到")] | //button[contains(text(), "领取奖励")]')
-            if not sign_btn:
-                return False, "未找到签到按钮"
+            # 2. 执行签到
+            response = self.session.post(f"{self.base_url}/api/checkin", timeout=self.timeout)
             
-            # 3. 点击签到按钮
-            sign_btn.click()
-            time.sleep(2)
-            
-            # 4. 处理验证码
-            if not self.handle_captcha():
-                return False, "验证码处理失败"
-            
-            # 5. 检查签到结果
-            time.sleep(2)
-            result_element = self.page.ele('xpath://div[contains(@class, "alert")]')
-            if result_element:
-                result_text = result_element.text
-                if "成功" in result_text or "奖励" in result_text:
-                    return True, f"签到成功: {result_text}"
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('code') == 0:
+                    # 签到成功
+                    points = data.get('data', {}).get('points', 0)
+                    if points > 0:
+                        return True, f"签到成功，获得 {points} 积分"
+                    else:
+                        return True, "签到成功"
                 else:
-                    return False, f"签到失败: {result_text}"
+                    # 签到失败
+                    error_msg = data.get('msg', '未知错误')
+                    if "已签到" in error_msg:
+                        return True, "今日已签到"
+                    else:
+                        return False, f"签到失败: {error_msg}"
             else:
-                return True, "签到完成"
+                return False, f"签到请求失败: {response.status_code}"
                 
         except Exception as e:
             return False, f"签到过程中出现异常: {e}"
@@ -427,18 +473,17 @@ class RainyunSigner:
         """获取积分信息"""
         try:
             logger.info("获取积分信息...")
+            response = self.session.get(f"{self.base_url}/api/user/points", timeout=self.timeout)
             
-            # 导航到积分页面
-            self.page.get("https://app.rainyun.com/points")
-            time.sleep(2)
-            
-            # 查找积分信息
-            points_element = self.page.ele('xpath://div[contains(@class, "points")]')
-            if points_element:
-                points_text = points_element.text
-                return True, f"当前积分: {points_text}"
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('code') == 0:
+                    points = data.get('data', {}).get('points', 0)
+                    return True, f"当前积分: {points}"
+                else:
+                    return False, f"获取积分失败: {data.get('msg', '未知错误')}"
             else:
-                return False, "未找到积分信息"
+                return False, f"请求失败: {response.status_code}"
                 
         except Exception as e:
             return False, f"获取积分信息时出现异常: {e}"
@@ -447,32 +492,36 @@ class RainyunSigner:
         """主执行函数"""
         logger.info(f"==== 雨云账号{self.index} 开始签到 ====")
         
-        if not self.username.strip() or not self.password.strip():
-            error_msg = """账号配置错误
+        # 检查认证配置
+        if not self.api_key and not (self.dev_code and self.rain_session):
+            error_msg = """认证配置错误
             
-❌ 错误原因: 用户名或密码为空
+❌ 错误原因: 未配置认证信息
             
 🔧 解决方法:
-1. 在青龙面板中添加环境变量RAINYUN_USERNAME（用户名）
-2. 在青龙面板中添加环境变量RAINYUN_PASSWORD（密码）
-3. 确保用户名和密码正确"""
+方法1 - 使用API密钥（推荐）:
+1. 在青龙面板中添加环境变量RAINYUN_API_KEY
+2. 获取API密钥: 登录雨云网站 → 总览 → 用户 → 账户设置 → API 密钥
+
+方法2 - 使用Cookie:
+1. 在青龙面板中添加环境变量RAINYUN_DEV_CODE
+2. 在青龙面板中添加环境变量RAINYUN_RAIN_SESSION
+3. 获取Cookie: 登录雨云网站 → F12 → 应用程序 → Cookie → 复制dev-code和rain-session值"""
             
             logger.error(error_msg)
             return error_msg, False
 
-        # 1. 检查登录状态
-        if not self.check_login_status():
-            # 2. 登录
-            if not self.login(self.username, self.password):
-                return "登录失败", False
+        # 1. 检查认证状态
+        if not self.check_auth_status():
+            return "认证失败", False
 
-        # 3. 执行签到
+        # 2. 执行签到
         sign_success, sign_message = self.sign_in()
 
-        # 4. 获取积分信息
+        # 3. 获取积分信息
         points_success, points_message = self.get_points()
 
-        # 5. 组合结果消息
+        # 4. 组合结果消息
         final_msg = f"""雨云签到结果
 
 📝 签到: {sign_message}
@@ -505,15 +554,7 @@ def wait_with_countdown(delay_seconds, task_name):
         
     logger.info(f"{task_name} 需要等待 {format_time_remaining(delay_seconds)}")
     
-    # 显示倒计时（每10秒显示一次）
-    remaining = delay_seconds
-    while remaining > 0:
-        if remaining % 10 == 0:
-            logger.info(f"{task_name} 倒计时: {format_time_remaining(remaining)}")
-        
-        sleep_time = min(10, remaining)
-        time.sleep(sleep_time)
-        remaining -= sleep_time
+    time.sleep(delay_seconds)
 
 def notify_user(title, content):
     """统一通知函数"""
@@ -536,98 +577,51 @@ def main():
         logger.info(f"随机延迟: {format_time_remaining(delay_seconds)}")
         wait_with_countdown(delay_seconds, "雨云签到")
     
-    # 获取账号配置
-    usernames = RAINYUN_USERNAME.split('&') if RAINYUN_USERNAME else []
-    passwords = RAINYUN_PASSWORD.split('&') if RAINYUN_PASSWORD else []
-    
-    # 清理空白项
-    usernames = [u.strip() for u in usernames if u.strip()]
-    passwords = [p.strip() for p in passwords if p.strip()]
-    
-    if not usernames or not passwords:
-        error_msg = """未找到RAINYUN_USERNAME或RAINYUN_PASSWORD环境变量
+    # 检查认证配置
+    if not RAINYUN_API_KEY and not (RAINYUN_DEV_CODE and RAINYUN_RAIN_SESSION):
+        error_msg = """未找到认证配置
         
 🔧 配置方法:
-1. RAINYUN_USERNAME: 用户名
-2. RAINYUN_PASSWORD: 密码"""
+方法1 - 使用API密钥（推荐）:
+1. RAINYUN_API_KEY: API密钥
+
+方法2 - 使用Cookie:
+1. RAINYUN_DEV_CODE: dev-code Cookie值
+2. RAINYUN_RAIN_SESSION: rain-session Cookie值"""
         
         logger.error(error_msg)
         notify_user("雨云签到失败", error_msg)
         return
     
-    if len(usernames) != len(passwords):
-        error_msg = f"""用户名和密码数量不匹配
-        
-📊 当前配置:
-- 用户名数量: {len(usernames)}
-- 密码数量: {len(passwords)}"""
-        
-        logger.error(error_msg)
-        notify_user("雨云签到失败", error_msg)
-        return
-    
-    logger.info(f"共发现 {len(usernames)} 个账号")
+    logger.info("开始执行雨云签到")
     
     success_count = 0
-    total_count = len(usernames)
+    total_count = 1  # API方式只支持单个账号
     results = []
     
-    # 注意：这里需要一个浏览器实例，但在独立脚本中无法获取
-    # 在实际使用中，需要通过外部方式提供浏览器实例
-    browser = None
-    
-    for index, (username, password) in enumerate(zip(usernames, passwords)):
-        try:
-            # 账号间随机等待
-            if index > 0:
-                delay = random.uniform(1, 3)
-                logger.info(f"随机等待 {delay:.1f} 秒后处理下一个账号...")
-                time.sleep(delay)
-            
-            # 执行签到
-            signer = RainyunSigner(username, password, index + 1)
-            # 注意：这里需要设置浏览器实例
-            if browser:
-                signer.set_browser(browser)
-            result_msg, is_success = signer.main()
-            
-            if is_success:
-                success_count += 1
-            
-            results.append({
-                'index': index + 1,
-                'success': is_success,
-                'message': result_msg
-            })
-            
-            # 发送单个账号通知
-            status = "成功" if is_success else "失败"
-            title = f"雨云账号{index + 1}签到{status}"
-            notify_user(title, result_msg)
-            
-        except Exception as e:
-            error_msg = f"账号{index + 1}: 执行异常 - {str(e)}"
-            logger.error(error_msg)
-            notify_user(f"雨云账号{index + 1}签到失败", error_msg)
-    
-    # 发送汇总通知
-    if total_count > 1:
-        summary_msg = f"""雨云签到汇总
-
-📈 总计: {total_count}个账号
-✅ 成功: {success_count}个
-❌ 失败: {total_count - success_count}个
-📊 成功率: {success_count/total_count*100:.1f}%
-⏰ 完成时间: {datetime.now().strftime('%m-%d %H:%M')}"""
+    try:
+        # 执行签到
+        signer = RainyunSigner("", "", 1)  # API方式不需要用户名密码
+        result_msg, is_success = signer.main()
         
-        # 添加详细结果（最多显示5个账号的详情）
-        if len(results) <= 5:
-            summary_msg += "\n\n详细结果:"
-            for result in results:
-                status_icon = "✅" if result['success'] else "❌"
-                summary_msg += f"\n{status_icon} 账号{result['index']}"
+        if is_success:
+            success_count += 1
         
-        notify_user("雨云签到汇总", summary_msg)
+        results.append({
+            'index': 1,
+            'success': is_success,
+            'message': result_msg
+        })
+        
+        # 发送签到通知
+        status = "成功" if is_success else "失败"
+        title = f"雨云签到{status}"
+        notify_user(title, result_msg)
+        
+    except Exception as e:
+        error_msg = f"执行异常 - {str(e)}"
+        logger.error(error_msg)
+        notify_user("雨云签到失败", error_msg)
     
     logger.info(f"==== 雨云签到完成 - 成功{success_count}/{total_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ====")
 
