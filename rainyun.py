@@ -505,13 +505,13 @@ def wait_with_countdown(delay_seconds, task_name):
         
     logger.info(f"{task_name} 需要等待 {format_time_remaining(delay_seconds)}")
     
-    # 显示倒计时（每10秒显示一次，最后10秒每秒显示）
+    # 显示倒计时（每10秒显示一次）
     remaining = delay_seconds
     while remaining > 0:
-        if remaining <= 10 or remaining % 10 == 0:
+        if remaining % 10 == 0:
             logger.info(f"{task_name} 倒计时: {format_time_remaining(remaining)}")
         
-        sleep_time = 1 if remaining <= 10 else min(10, remaining)
+        sleep_time = min(10, remaining)
         time.sleep(sleep_time)
         remaining -= sleep_time
 
