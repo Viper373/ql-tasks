@@ -26,7 +26,7 @@ except ImportError:
     logger.info("未加载通知模块，跳过通知功能")
 
 # ---------------- 配置项 ----------------
-ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE', '')
+ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE')
 
 class AnyRouterSigner:
     """AnyRouter 自动签到与信息提取工具"""

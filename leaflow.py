@@ -27,7 +27,7 @@ except ImportError:
     logger.info("未加载通知模块，跳过通知功能")
 
 # ---------------- 配置项 ----------------
-LEAFLOW_COOKIE = os.environ.get('LEAFLOW_COOKIE', '')
+LEAFLOW_COOKIE = os.environ.get('LEAFLOW_COOKIE')
 
 class LeaflowSigner:
     """Leaflow 自动签到工具"""
