@@ -45,8 +45,7 @@ except Exception as e:
 BASE = os.getenv("LEAFFLOW_BASE", "https://checkin.leaflow.net").rstrip("/")    
 TIMEOUT = int(os.getenv("TIMEOUT", "60"))    
 RETRY_TIMES = int(os.getenv("RETRY_TIMES", "3"))    
-RETRY_DELAY = int(os.getenv("RETRY_DELAY", "5"))    
-RANDOM_SIGNIN = os.getenv("RANDOM_SIGNIN", "true").lower() == "true"    
+RETRY_DELAY = int(os.getenv("RETRY_DELAY", "5"))
 MAX_RANDOM_DELAY = int(os.getenv("MAX_RANDOM_DELAY", "3600"))    
 NOTIFY_ON_ALREADY = os.getenv("NOTIFY_ON_ALREADY", "true").lower() == "true"  # 已签到是否通知
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"  # 🆕 调试模式
@@ -359,9 +358,7 @@ def main():
     cookie_list = [c.strip() for c in raw_list if c.strip()]    
         
     logger.info(f"共发现 {len(cookie_list)} 个 Cookie")    
-    logger.info(f"随机签到: {'启用' if RANDOM_SIGNIN else '禁用'}")    
-    if RANDOM_SIGNIN:    
-        logger.info(f"随机签到时间窗口: {MAX_RANDOM_DELAY // 60} 分钟")    
+    logger.info(f"随机签到: {'启用' if RANDOM_SIGNIN else '禁用'}")     
         
     if len(cookie_list) == 0:    
         logger.error("Cookie 列表为空")    
