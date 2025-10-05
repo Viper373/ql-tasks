@@ -357,8 +357,7 @@ def main():
         raw_list.extend(seg.split("&"))    
     cookie_list = [c.strip() for c in raw_list if c.strip()]    
         
-    logger.info(f"共发现 {len(cookie_list)} 个 Cookie")    
-    logger.info(f"随机签到: {'启用' if RANDOM_SIGNIN else '禁用'}")     
+    logger.info(f"共发现 {len(cookie_list)} 个 Cookie")       
         
     if len(cookie_list) == 0:    
         logger.error("Cookie 列表为空")    
@@ -367,7 +366,7 @@ def main():
     schedule = []    
     base_time = now_sh()    
     for i, ck in enumerate(cookie_list, 1):    
-        delay = random.randint(0, MAX_RANDOM_DELAY) if RANDOM_SIGNIN else 0    
+        delay = random.randint(0, MAX_RANDOM_DELAY)   
         at = base_time + timedelta(seconds=delay)    
         schedule.append({    
             "idx": i,    
