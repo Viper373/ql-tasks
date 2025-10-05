@@ -288,7 +288,7 @@ def sign_once_impl(cookie: str) -> tuple[str, str, float]:
 def sign_with_retry(cookie: str, account_name: str) -> tuple[str, str, float]:    
     for attempt in range(1, RETRY_TIMES + 1):    
         if attempt > 1:    
-            print(f"  🔄 第 {attempt}/{RETRY_TIMES} 次重试...")    
+            logger.info(f"第 {attempt}/{RETRY_TIMES} 次重试...")    
             time.sleep(RETRY_DELAY)    
             
         status, msg, amount = sign_once_impl(cookie)    
@@ -297,7 +297,7 @@ def sign_with_retry(cookie: str, account_name: str) -> tuple[str, str, float]:
             return status, msg, amount    
             
         if attempt < RETRY_TIMES:    
-            print(f"  ⚠️ {msg}，{RETRY_DELAY}秒后重试...")    
+            logger.warning(f"{msg}，{RETRY_DELAY}秒后重试...")    
         
     return status, f"{msg}（重试 {RETRY_TIMES} 次后失败）", 0    
   
@@ -318,41 +318,35 @@ def format_time_remaining(seconds: int) -> str:
 def wait_with_countdown(delay_seconds: int, tag: str):    
     if delay_seconds <= 0:    
         return    
-    print(f"{tag} 需要等待 {format_time_remaining(delay_seconds)}")    
-    remaining = delay_seconds    
-    while remaining > 0:    
-        if remaining <= 10 or remaining % 10 == 0:    
-            print(f"{tag} 倒计时: {format_time_remaining(remaining)}")    
-        step = 1 if remaining <= 10 else min(10, remaining)    
-        time.sleep(step)    
-        remaining -= step    
+    logger.info(f"{tag} 需要等待 {format_time_remaining(delay_seconds)}")    
+    time.sleep(delay_seconds)    
   
   
 def safe_send_notify(title, content):  
     """安全的通知发送（带日志）"""  
     if not hadsend:  
-        print(f"📢 [通知] {title}: {content}")  
-        print("   (通知模块未加载，仅控制台显示)")  
+        logger.info(f"[通知] {title}: {content}")  
+        logger.info("(通知模块未加载，仅控制台显示)")  
         return False  
       
     try:  
-        print(f"📤 正在推送通知: {title}")  
+        logger.info(f"正在推送通知: {title}")  
         send(title, content)  
-        print("✅ 通知推送成功")  
+        logger.info("通知推送成功")  
         return True  
     except Exception as e:  
-        print(f"❌ 通知推送失败: {e}")  
+        logger.error(f"通知推送失败: {e}")  
         return False  
   
   
 def main():    
-    print(f"{'='*50}")
-    print(f"  Leaflow 签到脚本 v2.0（修复版）")
-    print(f"  修复时间: 2025-10-05")
-    print(f"  修复内容: 解决误取历史金额问题")
+    logger.info("="*50)
+    logger.info("  Leaflow 签到脚本 v2.0（修复版）")
+    logger.info("  修复时间: 2025-10-05")
+    logger.info("  修复内容: 解决误取历史金额问题")
     if DEBUG_MODE:
-        print(f"  🐛 调试模式: 已启用")
-    print(f"{'='*50}\n")
+        logger.info("  调试模式: 已启用")
+    logger.info("="*50)
     
     cookies_env = os.getenv("LEAFLOW_COOKIE", "").strip()    
     if not cookies_env:    
