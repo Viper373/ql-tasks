@@ -80,7 +80,7 @@ def main():
     random_enabled = os.getenv('NODESEEK_RANDOM', 'true').lower() != 'false'
 
     # 整体短随机延迟（与其它任务一致）
-    overall_delay = random.randint(1, 10) if random_enabled else 0
+    overall_delay = random.randint(1, 3) if random_enabled else 0
     if overall_delay > 0:
         logger.info(f"随机延迟: {format_time_remaining(overall_delay)}")
         wait_with_countdown(overall_delay, "NodeSeek签到")
@@ -122,7 +122,7 @@ def main():
         logger.info(f"==== {display_user} 开始签到 ====")
         logger.info(f"当前时间: {datetime.now().strftime('%H:%M:%S')}")
 
-        short_delay = random.uniform(1, 3) if random_enabled else 0
+        short_delay = random.uniform(0, 1) if random_enabled else 0
         if short_delay > 0:
             logger.info(f"短暂随机延迟: {short_delay:.1f} 秒")
             time.sleep(short_delay)
