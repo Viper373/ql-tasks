@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-cron: 0 7 * * *
+cron: 0 10 * * *
 new Env('雨云签到')
 """
 

@@ -1,3 +1,8 @@
+"""
+cron: 0 9 * * *
+new Env('nodeseek签到')
+"""
+
 import os
 import random
 import time

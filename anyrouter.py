@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-cron: 0 10 * * *
+cron: 0 6 * * *
 new Env('AnyRouter签到')
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-cron: 0 9 * * *
+cron: 0 8 * * *
 new Env('leaflow签到')
 """
 
