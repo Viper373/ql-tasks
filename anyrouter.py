@@ -9,7 +9,8 @@ import os
 import time
 import random
 from datetime import datetime
-from typing import Optional
+import warnings
+warnings.filterwarnings("ignore")
 
 import requests
 from bs4 import BeautifulSoup
@@ -26,7 +27,7 @@ except ImportError:
     logger.info("未加载通知模块，跳过通知功能")
 
 # ---------------- 配置项 ----------------
-ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE')
+ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE', "session=MTc1OTU4MDc0OHxEWDhFQVFMX2dBQUJFQUVRQUFEX3h2LUFBQVlHYzNSeWFXNW5EQWNBQldkeWIzVndCbk4wY21sdVp3d0pBQWRrWldaaGRXeDBCbk4wY21sdVp3d05BQXR2WVhWMGFGOXpkR0YwWlFaemRISnBibWNNRGdBTWN6Wm9OM2xKTldkTGNGVjFCbk4wY21sdVp3d0VBQUpwWkFOcGJuUUVCUUQ5QW92aUJuTjBjbWx1Wnd3S0FBaDFjMlZ5Ym1GdFpRWnpkSEpwYm1jTUR3QU5iR2x1ZFhoa2IxODRNelEwTVFaemRISnBibWNNQmdBRWNtOXNaUU5wYm5RRUFnQUNCbk4wY21sdVp3d0lBQVp6ZEdGMGRYTURhVzUwQkFJQUFnPT18jnBmFvYVL8rp038NWIy-W3jbdFoa0WtSlT12qOQ3XwE=; acw_tc=a3b5529f17596659940747514e85b171a0e5a06fe6db457722e1ca120d; cdn_sec_tc=a3b5529f17596659940747514e85b171a0e5a06fe6db457722e1ca120d; acw_sc__v2=68e25f4a886477c47bef2a15be8c604cd8ecb823")
 
 class AnyRouterSigner:
     """AnyRouter 自动签到与信息提取工具"""
@@ -60,7 +61,7 @@ class AnyRouterSigner:
         """调用签到接口，返回(success, message)"""
         try:
             url = 'https://anyrouter.top/api/user/sign_in'
-            resp = self.session.post(url, timeout=30)
+            resp = self.session.post(url, timeout=30, verify=False)
             if resp.status_code != 200:
                 return False, f"HTTP {resp.status_code}"
             data = resp.json() if resp.content else {}
@@ -171,7 +172,7 @@ def main():
     logger.info(f"==== AnyRouter签到开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ====")
     
     # 随机延迟（整体延迟）
-    delay_seconds = random.randint(1, 10)  # 固定1-10秒随机延迟
+    delay_seconds = random.randint(1, 5)  # 固定1-10秒随机延迟
     if delay_seconds > 0:
         logger.info(f"随机延迟: {format_time_remaining(delay_seconds)}")
         wait_with_countdown(delay_seconds, "AnyRouter签到")
