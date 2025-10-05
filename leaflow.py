@@ -64,41 +64,6 @@ class LeaflowSigner:
         
         return session
 
-    def test_authentication(self, session):
-        """测试认证是否有效"""
-        try:
-            # 尝试访问需要认证的页面
-            test_urls = [
-                f"{self.main_site}/dashboard",
-                f"{self.main_site}/profile",
-                f"{self.main_site}/user",
-                self.checkin_url,
-            ]
-            
-            for url in test_urls:
-                try:
-                    response = session.get(url, timeout=30)
-                    logger.debug(f"[账号{self.index}] 测试 {url}: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        content = response.text.lower()
-                        if any(indicator in content for indicator in ['dashboard', 'profile', 'user', 'logout', 'welcome']):
-                            logger.info(f"✅ [账号{self.index}] 认证有效")
-                            return True, "认证成功"
-                    elif response.status_code in [301, 302, 303]:
-                        location = response.headers.get('location', '')
-                        if 'login' not in location.lower():
-                            logger.info(f"✅ [账号{self.index}] 认证有效 (重定向)")
-                            return True, "认证成功 (重定向)"
-                except Exception as e:
-                    logger.debug(f"[账号{self.index}] 测试 {url} 失败: {str(e)}")
-                    continue
-            
-            return False, "认证失败 - 未找到有效的认证页面"
-            
-        except Exception as e:
-            return False, f"认证测试错误: {str(e)}"
-
     def perform_checkin(self, session):
         """执行签到操作"""
         logger.info(f"🎯 [账号{self.index}] 执行签到...")
