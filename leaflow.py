@@ -377,11 +377,10 @@ def main():
             "name": f"账号{i}"    
         })    
     schedule.sort(key=lambda x: x["delay"])    
-        
-    if RANDOM_SIGNIN and len(cookie_list) > 1:    
-        logger.info("==== 签到执行顺序 ====")    
-        for it in schedule:    
-            logger.info(f"{it['name']}: 预计 {it['time'].strftime('%H:%M:%S')} 执行")    
+           
+    logger.info("==== 签到执行顺序 ====")    
+    for it in schedule:    
+        logger.info(f"{it['name']}: 预计 {it['time'].strftime('%H:%M:%S')} 执行")    
         
     logger.info("==== 开始执行签到任务 ====")    
         
@@ -407,10 +406,10 @@ def main():
             success_count += 1    
             if amount > 0:    
                 total_amount += amount    
-                logger.info(f"{name} {msg}")    
-                logger.info(f"本次获得: {amount} 元")    
+                logger.info(f"✅ {name} {msg}")    
+                logger.info(f"💰 本次获得: {amount} 元")    
             else:    
-                logger.info(f"{name} {msg}")    
+                logger.info(f"✅ {name} {msg}")    
                 
             safe_send_notify("Leaflow 签到成功", f"{name}：{msg}")  
             
@@ -418,9 +417,9 @@ def main():
             already_count += 1    
             if amount > 0:    
                 total_amount += amount    
-                logger.info(f"{name} {msg}")    
+                logger.info(f"ℹ️ {name} {msg}")    
             else:    
-                logger.info(f"{name} 今日已签到")    
+                logger.info(f"ℹ️ {name} 今日已签到")    
               
             if NOTIFY_ON_ALREADY:  
                 safe_send_notify("Leaflow 签到提醒", f"{name}：{msg}")  
@@ -435,10 +434,10 @@ def main():
         
     logger.info("="*50)    
     logger.info("  所有账号签到完成")    
-    logger.info(f"  成功: {success_count} | 已签: {already_count} | 失败: {fail_count}")    
+    logger.info(f" ✅ 成功: {success_count} | ℹ️ 已签: {already_count} | ❌ 失败: {fail_count}")    
         
     if total_amount > 0:    
-        logger.info(f"  今日总计获得: {total_amount} 元")    
+        logger.info(f" 💰 今日总计获得: {total_amount} 元")    
         
     logger.info(f"  完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")    
     logger.info("="*50)    
