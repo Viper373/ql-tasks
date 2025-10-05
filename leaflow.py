@@ -1,365 +1,464 @@
-#!/usr/bin/python3
-# -*- coding: utf-8 -*-
-"""
-cron: 0 8 * * *
-new Env('leaflow签到')
-"""
-
-import os
-import re
-import time
-import random
-from datetime import datetime
-from typing import Optional
-
-import requests
-from lxml import etree
+# -*- coding: utf-8 -*-    
+"""    
+cron "0 8 * * *" script-path=leaflow_checkin.py,tag=匹配cron用    
+new Env('leaflow签到')    
+"""    
+import os    
+import re    
+import sys    
+import time    
+import random    
+from datetime import datetime, timedelta    
 from loguru import logger
-
-# ---------------- 通知模块动态加载 ----------------
-hadsend = False
-send = None
-try:
-    from notify import send
-    hadsend = True
-    logger.info("已加载notify.py通知模块")
-except ImportError:
-    logger.info("未加载通知模块，跳过通知功能")
-
-# ---------------- 配置项 ----------------
-LEAFLOW_COOKIE = os.environ.get('LEAFLOW_COOKIE')
-
-class LeaflowSigner:
-    """Leaflow 自动签到工具"""
-
-    def __init__(self, cookie: str = "", index: int = 1) -> None:
-        self.cookie = cookie
-        self.index = index
-        self.checkin_url = "https://checkin.leaflow.net"
-        self.main_site = "https://leaflow.net"
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-
-    def create_session(self):
-        """根据cookie创建会话"""
-        session = requests.Session()
-        session.headers.update(self.headers)
+  
+  
+try:    
+    from zoneinfo import ZoneInfo    
+    SH_TZ = ZoneInfo("Asia/Shanghai")    
+except Exception:    
+    SH_TZ = None    
+  
+  
+try:    
+    from curl_cffi import requests    
+    USE_CURL_CFFI = True    
+except ImportError:    
+    import requests    
+    USE_CURL_CFFI = False    
+  
+  
+# ---------------- 可选通知模块 ----------------    
+hadsend = False    
+notify_error = None  
+try:    
+    from notify import send    
+    hadsend = True    
+    logger.info("✅ 通知模块加载成功")  
+except Exception as e:    
+    notify_error = str(e)  
+    logger.warning(f"⚠️ 通知模块加载失败: {e}")  
+    def send(title, content):    
+        pass    
+  
+  
+# ---------------- 配置项 ----------------    
+BASE = os.getenv("LEAFFLOW_BASE", "https://checkin.leaflow.net").rstrip("/")    
+TIMEOUT = int(os.getenv("TIMEOUT", "60"))    
+RETRY_TIMES = int(os.getenv("RETRY_TIMES", "3"))    
+RETRY_DELAY = int(os.getenv("RETRY_DELAY", "5"))    
+RANDOM_SIGNIN = os.getenv("RANDOM_SIGNIN", "true").lower() == "true"    
+MAX_RANDOM_DELAY = int(os.getenv("MAX_RANDOM_DELAY", "3600"))    
+NOTIFY_ON_ALREADY = os.getenv("NOTIFY_ON_ALREADY", "true").lower() == "true"  # 已签到是否通知
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"  # 🆕 调试模式
+  
+  
+HTTP_PROXY = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")    
+HTTPS_PROXY = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")    
+PROXIES = None    
+if HTTP_PROXY or HTTPS_PROXY:    
+    PROXIES = {"http": HTTP_PROXY or HTTPS_PROXY, "https": HTTPS_PROXY or HTTP_PROXY}    
+  
+  
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"    
+  
+  
+def now_sh():    
+    return datetime.now(tz=SH_TZ) if SH_TZ else datetime.now()    
+  
+  
+def build_session(cookie: str):    
+    s = requests.Session()    
+    s.headers.update({    
+        "User-Agent": UA,    
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",    
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",    
+        "Connection": "keep-alive",    
+        "Cookie": cookie.strip(),    
+    })    
+    if PROXIES:    
+        s.proxies.update(PROXIES)    
+    return s    
+  
+  
+def extract_csrf(html: str) -> dict:    
+    data = {}    
+    for m in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]*>', html, re.I):    
+        tag = m.group(0)    
+        name_match = re.search(r'name=["\']([^"\']+)["\']', tag)    
+        value_match = re.search(r'value=["\']([^"\']*)["\']', tag)    
+        if name_match:    
+            data[name_match.group(1)] = value_match.group(1) if value_match else ""    
+    return data    
+  
+  
+def extract_reward(html: str) -> float:
+    """
+    🔧 修复版本：优先匹配今日签到奖励，避免误取历史记录
+    """
+    if not html:    
+        return 0    
         
-        # 如果提供了cookie，设置到会话中
-        if self.cookie:
-            # 解析cookie字符串
-            if 'PHPSESSID=' in self.cookie:
-                # 如果cookie中包含PHPSESSID，直接使用
-                session.headers['Cookie'] = self.cookie
-            else:
-                # 否则尝试作为完整的Cookie头使用
-                session.headers['Cookie'] = self.cookie
+    # 清理脚本和样式标签
+    text_cleaned = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.I)    
+    text_cleaned = re.sub(r'<style[^>]*>.*?</style>', '', text_cleaned, flags=re.DOTALL | re.I)    
+    
+    # 🆕 移除签到历史区域（避免误匹配历史金额）
+    text_cleaned = re.sub(
+        r'<div[^>]*class=["\'][^"\']*history[^"\']*["\'][^>]*>.*?</div>',
+        '',
+        text_cleaned,
+        flags=re.DOTALL | re.I
+    )
+    text_cleaned = re.sub(
+        r'签到历史.*?(?=<div|$)',
+        '',
+        text_cleaned,
+        flags=re.DOTALL | re.I
+    )
+    
+    if DEBUG_MODE:
+        logger.debug(f"[DEBUG] 清理后的HTML片段: {text_cleaned[:300]}...")
+    
+    # 🆕 优先级1：明确匹配"今日/今天/本次/签到成功"相关的奖励
+    priority_patterns = [
+        r'今日.*?获得.*?([\d.]+)\s*元',
+        r'今天.*?获得.*?([\d.]+)\s*元',
+        r'本次.*?获得.*?([\d.]+)\s*元',
+        r'签到成功.*?获得.*?([\d.]+)\s*元',
+        r'今日签到.*?([\d.]+)\s*元',
+        r'恭喜.*?获得.*?([\d.]+)\s*元',
+        r'成功.*?奖励.*?([\d.]+)\s*元',
+    ]
+    
+    for pattern in priority_patterns:
+        match = re.search(pattern, text_cleaned, re.I)
+        if match:
+            try:
+                amount = float(match.group(1))
+                if 0.01 <= amount <= 10:
+                    if DEBUG_MODE:
+                        logger.debug(f"[DEBUG] 优先级匹配成功: {pattern} -> {amount} 元")
+                    return amount
+            except (ValueError, IndexError):
+                continue
+    
+    # 🆕 优先级2：通用模式（从前往后找第一个，而非最大值）
+    general_patterns = [    
+        r'\+\s*([\d.]+)\s*元',    
+        r'([\d.]+)\s*元',    
+        r'获得.*?([\d.]+)\s*元',    
+        r'奖励.*?([\d.]+)\s*元',    
+        r'领取.*?([\d.]+)\s*元',    
+    ]    
+    
+    for pattern in general_patterns:
+        match = re.search(pattern, text_cleaned, re.I)  # 🔄 改为 search（找第一个）
+        if match:
+            try:
+                amount = float(match.group(1))
+                if 0.01 <= amount <= 10:
+                    if DEBUG_MODE:
+                        logger.debug(f"[DEBUG] 通用模式匹配: {pattern} -> {amount} 元")
+                    return amount
+            except (ValueError, IndexError):
+                continue
+    
+    if DEBUG_MODE:
+        logger.debug("[DEBUG] 未匹配到任何金额")
+    return 0    
+  
+  
+def parse_result(html: str) -> tuple[str, str, float]:    
+    if not html:    
+        return "unknown", "页面内容为空", 0    
         
-        return session
-
-    def perform_checkin(self, session):
-        """执行签到操作"""
-        logger.info(f"🎯 [账号{self.index}] 执行签到...")
+    amount = extract_reward(html)    
         
-        try:
-            # 方法1: 直接访问签到页面
-            response = session.get(self.checkin_url, timeout=30)
-            
-            if response.status_code == 200:
-                result = self.analyze_and_checkin(session, response.text)
-                if result[0]:
-                    return result
-            
-            # 方法2: 尝试API端点
-            api_endpoints = [
-                f"{self.checkin_url}/api/checkin",
-                f"{self.checkin_url}/checkin",
-                f"{self.main_site}/api/checkin",
-                f"{self.main_site}/checkin"
-            ]
-            
-            for endpoint in api_endpoints:
-                try:
-                    # GET请求
-                    response = session.get(endpoint, timeout=30)
-                    if response.status_code == 200:
-                        success, message = self.check_checkin_response(response.text)
-                        if success:
-                            return True, message
-                    
-                    # POST请求
-                    response = session.post(endpoint, data={'checkin': '1'}, timeout=30)
-                    if response.status_code == 200:
-                        success, message = self.check_checkin_response(response.text)
-                        if success:
-                            return True, message
-                            
-                except Exception as e:
-                    logger.debug(f"[账号{self.index}] API端点 {endpoint} 失败: {str(e)}")
-                    continue
-            
-            return False, "所有签到方法都失败了"
-            
-        except Exception as e:
-            return False, f"签到错误: {str(e)}"
-
-    def analyze_and_checkin(self, session, html_content):
-        """分析页面内容并执行签到"""
-        # 检查是否已经签到
-        if self.already_checked_in(html_content):
-            return True, "今日已签到"
+    already_patterns = [    
+        r'今日已签到',    
+        r'已连续签到',    
+        r'明天再来',    
+        r'已签到',    
+        r'already\s+checked',    
+    ]    
         
-        # 检查是否需要签到
-        if not self.is_checkin_page(html_content):
-            return False, "不是签到页面"
+    for pattern in already_patterns:    
+        if re.search(pattern, html, re.I):    
+            if amount > 0:    
+                return "already", f"今日已签到（今日获得 {amount} 元）", amount    
+            return "already", "今日已签到", 0    
         
-        # 尝试POST签到
-        try:
-            checkin_data = {'checkin': '1', 'action': 'checkin', 'daily': '1'}
+    success_patterns = [    
+        r'签到成功',    
+        r'获得奖励',    
+        r'领取成功',    
+        r'恭喜',    
+        r'check-?in\s+success',    
+    ]    
+        
+    for pattern in success_patterns:    
+        if re.search(pattern, html, re.I):    
+            if amount > 0:    
+                return "success", f"签到成功，获得 {amount} 元", amount    
+            return "success", "签到成功", 0    
+        
+    invalid_patterns = [    
+        r'请登录',    
+        r'please\s+log\s*in',    
+        r'未登录',    
+        r'session\s+expired',    
+    ]    
+        
+    for pattern in invalid_patterns:    
+        if re.search(pattern, html, re.I):    
+            return "invalid", "登录失效，请更新 Cookie", 0    
+        
+    if "error" in html.lower() or "错误" in html:    
+        return "fail", "页面返回错误", 0    
+        
+    return "unknown", "未识别到明确状态", 0    
+  
+  
+def sign_once_impl(cookie: str) -> tuple[str, str, float]:    
+    s = build_session(cookie)    
+        
+    try:    
+        kwargs = {"timeout": TIMEOUT, "allow_redirects": True}    
+        if USE_CURL_CFFI:    
+            kwargs["impersonate"] = "chrome120"    
             
-            # 提取CSRF token
-            csrf_token = self.extract_csrf_token(html_content)
-            if csrf_token:
-                checkin_data['_token'] = csrf_token
-                checkin_data['csrf_token'] = csrf_token
+        r1 = s.get(f"{BASE}/", **kwargs)    
             
-            response = session.post(self.checkin_url, data=checkin_data, timeout=30)
+        if "login" in r1.url.lower():    
+            return "invalid", "被重定向到登录页，Cookie 已失效", 0    
             
-            if response.status_code == 200:
-                return self.check_checkin_response(response.text)
+        if r1.status_code == 403:    
+            return "error", "403 Forbidden（触发风控）", 0    
+            
+        if r1.status_code != 200:    
+            return "error", f"首页返回 {r1.status_code}", 0    
+            
+        html1 = r1.text or ""    
+            
+        if any(x in html1 for x in ["请登录", "未登录"]):    
+            return "invalid", "页面提示未登录", 0    
+            
+        form_data = {"checkin": ""}    
+        form_data.update(extract_csrf(html1))    
+            
+        headers_post = {    
+            "Content-Type": "application/x-www-form-urlencoded",    
+            "Origin": BASE,    
+            "Referer": f"{BASE}/",    
+        }    
+            
+        r2 = s.post(f"{BASE}/index.php", data=form_data, headers=headers_post, **kwargs)    
+            
+        if r2.status_code == 403:    
+            return "error", "POST 被拒绝 403", 0    
+            
+        html2 = r2.text or ""
+        
+        if DEBUG_MODE:
+            # 保存HTML到临时文件用于调试
+            debug_file = f"debug_response_{int(time.time())}.html"
+            with open(debug_file, "w", encoding="utf-8") as f:
+                f.write(html2)
+            logger.debug(f"[DEBUG] 响应已保存到: {debug_file}")
+        
+        status, msg, amount = parse_result(html2)    
+            
+        if status == "unknown" or (status == "success" and amount == 0):    
+            time.sleep(1)    
+            r3 = s.get(f"{BASE}/", **kwargs)    
+            status2, msg2, amount2 = parse_result(r3.text or "")    
+            if status2 != "unknown":    
+                return status2, msg2, amount2    
+            
+        return status, msg, amount    
+            
+    except requests.exceptions.Timeout:    
+        return "error", f"请求超时（{TIMEOUT}秒）", 0    
+    except requests.exceptions.ConnectionError as e:    
+        return "error", f"连接失败: {str(e)[:80]}", 0    
+    except Exception as e:    
+        return "error", f"{e.__class__.__name__}: {str(e)[:100]}", 0    
+  
+  
+def sign_with_retry(cookie: str, account_name: str) -> tuple[str, str, float]:    
+    for attempt in range(1, RETRY_TIMES + 1):    
+        if attempt > 1:    
+            print(f"  🔄 第 {attempt}/{RETRY_TIMES} 次重试...")    
+            time.sleep(RETRY_DELAY)    
+            
+        status, msg, amount = sign_once_impl(cookie)    
+            
+        if status in ("success", "already", "invalid"):    
+            return status, msg, amount    
+            
+        if attempt < RETRY_TIMES:    
+            print(f"  ⚠️ {msg}，{RETRY_DELAY}秒后重试...")    
+        
+    return status, f"{msg}（重试 {RETRY_TIMES} 次后失败）", 0    
+  
+  
+def format_time_remaining(seconds: int) -> str:    
+    if seconds <= 0:    
+        return "立即执行"    
+    h = seconds // 3600    
+    m = (seconds % 3600) // 60    
+    s = seconds % 60    
+    if h > 0:    
+        return f"{h}小时{m}分{s}秒"    
+    if m > 0:    
+        return f"{m}分{s}秒"    
+    return f"{s}秒"    
+  
+  
+def wait_with_countdown(delay_seconds: int, tag: str):    
+    if delay_seconds <= 0:    
+        return    
+    print(f"{tag} 需要等待 {format_time_remaining(delay_seconds)}")    
+    remaining = delay_seconds    
+    while remaining > 0:    
+        if remaining <= 10 or remaining % 10 == 0:    
+            print(f"{tag} 倒计时: {format_time_remaining(remaining)}")    
+        step = 1 if remaining <= 10 else min(10, remaining)    
+        time.sleep(step)    
+        remaining -= step    
+  
+  
+def safe_send_notify(title, content):  
+    """安全的通知发送（带日志）"""  
+    if not hadsend:  
+        print(f"📢 [通知] {title}: {content}")  
+        print("   (通知模块未加载，仅控制台显示)")  
+        return False  
+      
+    try:  
+        print(f"📤 正在推送通知: {title}")  
+        send(title, content)  
+        print("✅ 通知推送成功")  
+        return True  
+    except Exception as e:  
+        print(f"❌ 通知推送失败: {e}")  
+        return False  
+  
+  
+def main():    
+    print(f"{'='*50}")
+    print(f"  Leaflow 签到脚本 v2.0（修复版）")
+    print(f"  修复时间: 2025-10-05")
+    print(f"  修复内容: 解决误取历史金额问题")
+    if DEBUG_MODE:
+        print(f"  🐛 调试模式: 已启用")
+    print(f"{'='*50}\n")
+    
+    cookies_env = os.getenv("LEAFLOW_COOKIE", "").strip()    
+    if not cookies_env:    
+        logger.error("未设置 LEAFFLOW_COOKIE 环境变量")    
+        sys.exit(1)    
+        
+    raw_list = []    
+    for seg in cookies_env.replace("\r", "\n").split("\n"):    
+        raw_list.extend(seg.split("&"))    
+    cookie_list = [c.strip() for c in raw_list if c.strip()]    
+        
+    logger.info(f"共发现 {len(cookie_list)} 个 Cookie")    
+    logger.info(f"随机签到: {'启用' if RANDOM_SIGNIN else '禁用'}")    
+    if RANDOM_SIGNIN:    
+        logger.info(f"随机签到时间窗口: {MAX_RANDOM_DELAY // 60} 分钟")    
+        
+    if len(cookie_list) == 0:    
+        logger.error("Cookie 列表为空")    
+        sys.exit(1)    
+        
+    schedule = []    
+    base_time = now_sh()    
+    for i, ck in enumerate(cookie_list, 1):    
+        delay = random.randint(0, MAX_RANDOM_DELAY) if RANDOM_SIGNIN else 0    
+        at = base_time + timedelta(seconds=delay)    
+        schedule.append({    
+            "idx": i,    
+            "cookie": ck,    
+            "delay": delay,    
+            "time": at,    
+            "name": f"账号{i}"    
+        })    
+    schedule.sort(key=lambda x: x["delay"])    
+        
+    if RANDOM_SIGNIN and len(cookie_list) > 1:    
+        logger.info("==== 签到执行顺序 ====")    
+        for it in schedule:    
+            logger.info(f"{it['name']}: 预计 {it['time'].strftime('%H:%M:%S')} 执行")    
+        
+    logger.info("==== 开始执行签到任务 ====")    
+        
+    success_count = 0    
+    already_count = 0    
+    fail_count = 0    
+    total_amount = 0.0    
+        
+    for it in schedule:    
+        name = it["name"]    
+            
+        if it["delay"] > 0:    
+            # 将调度延迟限制在 1-5 秒
+            bounded = max(1, min(5, int(it["delay"])))
+            wait_with_countdown(bounded, name)    
+            
+        logger.info(f"==== {name} 开始签到 ====")    
+        logger.info(f"当前时间: {datetime.now().strftime('%H:%M:%S')}")    
+            
+        status, msg, amount = sign_with_retry(it["cookie"], name)    
+            
+        if status == "success":    
+            success_count += 1    
+            if amount > 0:    
+                total_amount += amount    
+                logger.info(f"{name} {msg}")    
+                logger.info(f"本次获得: {amount} 元")    
+            else:    
+                logger.info(f"{name} {msg}")    
                 
-        except Exception as e:
-            logger.debug(f"[账号{self.index}] POST签到失败: {str(e)}")
-        
-        return False, "签到执行失败"
-
-    def already_checked_in(self, html_content):
-        """检查是否已经签到"""
-        content_lower = html_content.lower()
-        indicators = [
-            'already checked in', '今日已签到', 'checked in today',
-            'attendance recorded', '已完成签到', 'completed today'
-        ]
-        return any(indicator in content_lower for indicator in indicators)
-
-    def is_checkin_page(self, html_content):
-        """判断是否是签到页面"""
-        content_lower = html_content.lower()
-        indicators = ['check-in', 'checkin', '签到', 'attendance', 'daily']
-        return any(indicator in content_lower for indicator in indicators)
-
-    def extract_csrf_token(self, html_content):
-        """提取CSRF token"""
-        patterns = [
-            r'name=["\']_token["\'][^>]*value=["\']([^"\']+)["\']',
-            r'name=["\']csrf_token["\'][^>]*value=["\']([^"\']+)["\']',
-            r'<meta[^>]*name=["\']csrf-token["\'][^>]*content=["\']([^"\']+)["\']',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, html_content, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
-        return None
-
-    def check_checkin_response(self, html_content):
-        """检查签到响应"""
-        content_lower = html_content.lower()
-        
-        success_indicators = [
-            'check-in successful', 'checkin successful', '签到成功',
-            'attendance recorded', 'earned reward', '获得奖励',
-            'success', '成功', 'completed'
-        ]
-        
-        if any(indicator in content_lower for indicator in success_indicators):
-            # 提取奖励信息
-            reward_patterns = [
-                r'获得奖励[^\d]*(\d+\.?\d*)\s*元',
-                r'earned.*?(\d+\.?\d*)\s*(credits?|points?)',
-                r'(\d+\.?\d*)\s*(credits?|points?|元)'
-            ]
+            safe_send_notify("Leaflow 签到成功", f"{name}：{msg}")  
             
-            for pattern in reward_patterns:
-                match = re.search(pattern, html_content, re.IGNORECASE)
-                if match:
-                    reward = match.group(1)
-                    return True, f"签到成功! 获得 {reward} 积分"
+        elif status == "already":    
+            already_count += 1    
+            if amount > 0:    
+                total_amount += amount    
+                logger.info(f"{name} {msg}")    
+            else:    
+                logger.info(f"{name} 今日已签到")    
+              
+            if NOTIFY_ON_ALREADY:  
+                safe_send_notify("Leaflow 签到提醒", f"{name}：{msg}")  
             
-            return True, "签到成功!"
+        else:    
+            fail_count += 1    
+            logger.error(f"{name} 签到失败: {msg}")    
+            safe_send_notify("Leaflow 签到失败", f"{name}：{status} - {msg}")  
+            
+        if it["idx"] < len(cookie_list):    
+            time.sleep(random.uniform(1, 5))    
         
-        return False, "签到响应表示失败"
-
-    def checkin(self) -> tuple[bool, str]:
-        """执行签到"""
-        try:
-            # 创建会话
-            session = self.create_session()
-            
-            # 测试认证
-            auth_result = self.test_authentication(session)
-            if not auth_result[0]:
-                return False, f"认证失败: {auth_result[1]}"
-            
-            # 执行签到
-            return self.perform_checkin(session)
-            
-        except Exception as e:
-            return False, f"签到失败：{e}"
-
-    def main(self) -> tuple[str, bool]:
-        """主执行函数"""
-        logger.info(f"==== leaflow账号{self.index} 开始签到 ====")
+    logger.info("="*50)    
+    logger.info("  所有账号签到完成")    
+    logger.info(f"  成功: {success_count} | 已签: {already_count} | 失败: {fail_count}")    
         
-        if not self.cookie.strip():
-            error_msg = """账号配置错误
-            
-❌ 错误原因: Cookie为空
-            
-🔧 解决方法:
-1. 在青龙面板中添加环境变量LEAFLOW_COOKIE（Cookie值）
-2. 确保Cookie格式正确"""
-            
-            logger.error(error_msg)
-            return error_msg, False
-
-        # 执行签到
-        success, message = self.checkin()
+    if total_amount > 0:    
+        logger.info(f"  今日总计获得: {total_amount} 元")    
         
-        # 组合结果消息
-        final_msg = f"""leaflow签到结果
-
-📝 签到: {message}
-⏰ 时间: {datetime.now().strftime('%m-%d %H:%M')}"""
+    logger.info(f"  完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")    
+    logger.info("="*50)    
         
-        logger.info(f"{'任务完成' if success else '任务失败'}")
-        return final_msg, success
-
-def format_time_remaining(seconds):
-    """格式化时间显示"""
-    if seconds <= 0:
-        return "立即执行"
+    if len(cookie_list) > 1:    
+        summary = f"签到完成\n成功: {success_count} | 已签: {already_count} | 失败: {fail_count}"    
+        if total_amount > 0:    
+            summary += f"\n今日共获得: {total_amount} 元"    
+        safe_send_notify("Leaflow 签到汇总", summary)  
     
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
-    
-    if hours > 0:
-        return f"{hours}小时{minutes}分{secs}秒"
-    elif minutes > 0:
-        return f"{minutes}分{secs}秒"
-    else:
-        return f"{secs}秒"
-
-def wait_with_countdown(delay_seconds, task_name):
-    """带倒计时的随机延迟等待"""
-    if delay_seconds <= 0:
-        return
-        
-    logger.info(f"{task_name} 需要等待 {format_time_remaining(delay_seconds)}")
-    
-    time.sleep(delay_seconds)
-
-def notify_user(title, content):
-    """统一通知函数"""
-    if hadsend:
-        try:
-            send(title, content)
-            logger.info(f"通知发送完成: {title}")
-        except Exception as e:
-            logger.error(f"通知发送失败: {e}")
-    else:
-        logger.info(f"{title}\n{content}")
-
-def main():
-    """主程序入口"""
-    logger.info(f"==== leaflow签到开始 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ====")
-    
-    # 随机延迟（整体延迟）
-    delay_seconds = random.randint(1, 10)  # 固定1-10秒随机延迟
-    if delay_seconds > 0:
-        logger.info(f"随机延迟: {format_time_remaining(delay_seconds)}")
-        wait_with_countdown(delay_seconds, "leaflow签到")
-    
-    # 获取Cookie配置
-    cookies = LEAFLOW_COOKIE.split('&') if LEAFLOW_COOKIE else []
-    cookies = [c.strip() for c in cookies if c.strip()]
-    
-    if not cookies:
-        error_msg = """未找到LEAFLOW_COOKIE环境变量
-        
-🔧 配置方法:
-1. LEAFLOW_COOKIE: Cookie值"""
-        
-        logger.error(error_msg)
-        notify_user("leaflow签到失败", error_msg)
-        return
-    
-    logger.info(f"共发现 {len(cookies)} 个账号")
-    
-    success_count = 0
-    total_count = len(cookies)
-    results = []
-    
-    for index, cookie in enumerate(cookies):
-        try:
-            # 账号间随机等待
-            if index > 0:
-                delay = random.uniform(1, 3)
-                logger.info(f"随机等待 {delay:.1f} 秒后处理下一个账号...")
-                time.sleep(delay)
-            
-            # 执行签到
-            signer = LeaflowSigner(cookie, index + 1)
-            result_msg, is_success = signer.main()
-            
-            if is_success:
-                success_count += 1
-            
-            results.append({
-                'index': index + 1,
-                'success': is_success,
-                'message': result_msg
-            })
-            
-            # 发送单个账号通知
-            status = "成功" if is_success else "失败"
-            title = f"leaflow账号{index + 1}签到{status}"
-            notify_user(title, result_msg)
-            
-        except Exception as e:
-            error_msg = f"账号{index + 1}: 执行异常 - {str(e)}"
-            logger.error(error_msg)
-            notify_user(f"leaflow账号{index + 1}签到失败", error_msg)
-    
-    # 发送汇总通知
-    if total_count > 1:
-        summary_msg = f"""leaflow签到汇总
-
-📈 总计: {total_count}个账号
-✅ 成功: {success_count}个
-❌ 失败: {total_count - success_count}个
-📊 成功率: {success_count/total_count*100:.1f}%
-⏰ 完成时间: {datetime.now().strftime('%m-%d %H:%M')}"""
-        
-        # 添加详细结果（最多显示5个账号的详情）
-        if len(results) <= 5:
-            summary_msg += "\n\n详细结果:"
-            for result in results:
-                status_icon = "✅" if result['success'] else "❌"
-                summary_msg += f"\n{status_icon} 账号{result['index']}"
-        
-        notify_user("leaflow签到汇总", summary_msg)
-    
-    logger.info(f"==== leaflow签到完成 - 成功{success_count}/{total_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ====")
-
-if __name__ == "__main__":
+  
+  
+if __name__ == "__main__":    
     main()
