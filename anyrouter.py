@@ -27,7 +27,8 @@ except ImportError:
     logger.info("未加载通知模块，跳过通知功能")
 
 # ---------------- 配置项 ----------------
-ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE', "session=MTc1OTU4MDc0OHxEWDhFQVFMX2dBQUJFQUVRQUFEX3h2LUFBQVlHYzNSeWFXNW5EQWNBQldkeWIzVndCbk4wY21sdVp3d0pBQWRrWldaaGRXeDBCbk4wY21sdVp3d05BQXR2WVhWMGFGOXpkR0YwWlFaemRISnBibWNNRGdBTWN6Wm9OM2xKTldkTGNGVjFCbk4wY21sdVp3d0VBQUpwWkFOcGJuUUVCUUQ5QW92aUJuTjBjbWx1Wnd3S0FBaDFjMlZ5Ym1GdFpRWnpkSEpwYm1jTUR3QU5iR2x1ZFhoa2IxODRNelEwTVFaemRISnBibWNNQmdBRWNtOXNaUU5wYm5RRUFnQUNCbk4wY21sdVp3d0lBQVp6ZEdGMGRYTURhVzUwQkFJQUFnPT18jnBmFvYVL8rp038NWIy-W3jbdFoa0WtSlT12qOQ3XwE=; acw_tc=a3b5529f17596659940747514e85b171a0e5a06fe6db457722e1ca120d; cdn_sec_tc=a3b5529f17596659940747514e85b171a0e5a06fe6db457722e1ca120d; acw_sc__v2=68e25f4a886477c47bef2a15be8c604cd8ecb823")
+ANYROUTER_COOKIE = os.environ.get('ANYROUTER_COOKIE')
+ANYROUTER_NEW_API_USER = os.environ.get('ANYROUTER_NEW_API_USER')
 
 class AnyRouterSigner:
     """AnyRouter 自动签到与信息提取工具"""
@@ -53,15 +54,29 @@ class AnyRouterSigner:
         }
 
         self.session = requests.Session()
-        if self.cookie:
-            self.session.headers.update({'Cookie': self.cookie})
         self.session.headers.update(self.common_headers)
+        # 可选 new-api-user 头
+        if ANYROUTER_NEW_API_USER:
+            self.session.headers['new-api-user'] = ANYROUTER_NEW_API_USER
+
+    def _cookie_dict(self) -> dict:
+        """将环境变量中的 Cookie 串解析为 dict 传给 requests.cookies"""
+        cookie_dict: dict[str, str] = {}
+        if not self.cookie:
+            return cookie_dict
+        # 支持以分号分隔的 cookie 串
+        parts = [p.strip() for p in self.cookie.split(';') if p.strip()]
+        for p in parts:
+            if '=' in p:
+                k, v = p.split('=', 1)
+                cookie_dict[k.strip()] = v.strip()
+        return cookie_dict
 
     def _post_signin(self) -> tuple[bool, str]:
         """调用签到接口，返回(success, message)"""
         try:
             url = 'https://anyrouter.top/api/user/sign_in'
-            resp = self.session.post(url, timeout=30, verify=False)
+            resp = self.session.post(url, timeout=30, verify=False, cookies=self._cookie_dict())
             if resp.status_code != 200:
                 return False, f"HTTP {resp.status_code}"
             data = resp.json() if resp.content else {}
@@ -77,7 +92,7 @@ class AnyRouterSigner:
         contents: list[str] = []
         try:
             url = 'https://anyrouter.top/console'
-            resp = self.session.get(url, timeout=30)
+            resp = self.session.get(url, timeout=30, cookies=self._cookie_dict())
             if resp.status_code != 200:
                 return titles, contents
             soup = BeautifulSoup(resp.text, 'html.parser')
