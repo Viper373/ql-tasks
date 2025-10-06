@@ -347,7 +347,7 @@ def main():
         logger.info("  调试模式: 已启用")
     logger.info("="*50)
     
-    cookies_env = os.getenv("LEAFLOW_COOKIE", "PHPSESSID=7d7bfcb363886d0d1f303009489fee29").strip()    
+    cookies_env = os.getenv("LEAFLOW_COOKIE").strip()    
     if not cookies_env:    
         logger.error("未设置 LEAFFLOW_COOKIE 环境变量")    
         sys.exit(1)    
