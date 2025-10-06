@@ -85,7 +85,7 @@ def main():
         logger.info(f"随机延迟: {format_time_remaining(overall_delay)}")
         wait_with_countdown(overall_delay, "NodeSeek签到")
 
-    cookies_env = os.getenv('NODESEEK_COOKIE', 'colorscheme=light; sortBy=postTime; session=ef7a371f2f03c516fa7600c2db923223; smac=1759501968-mAZNUM3VZm-RApFuacZtVVaxKCKZMcAmjlsPCs5cJ7w; hmti_=1759501979-c0oI_hu8-3sLTy_9tei_t11t5YMQcbu1X6jVSZEqJycu; cf_clearance=gdN4DUpGVhwSdnZvNN6tfTyGR70SZyjHdkVh35ZQeCs-1759503841-1.2.1.1-c3.MTckEHlMcPKCGpdX505nGceT42dCvRbFBYgZ9A.uzBA7IC1UfMMDSxUa6usBszss5o9WZluVmDCepu2dqRapzjerOydInsjlWOXoe164zUduOOx8dP04nYs3H4X5ZxU6d_MS.jZwQlswgmfjh_4owuQEUzRJcjbu6bdo9PFNuP7A58EKmV_9TtpcOEayOT7vI6DRWaTG598ZRGHP6uXushsu5thQeUeoPNkUTxbo')
+    cookies_env = os.getenv('NODESEEK_COOKIE')
     if not cookies_env.strip():
         err = "未找到NODESEEK_COOKIE环境变量"
         logger.error(err)
